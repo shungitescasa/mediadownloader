@@ -37,3 +37,7 @@ tempfiles/
 .vscode/
 .zed/
 .DS_Store
+
+# runtime queue
+queue.json
+queue.json.tmp

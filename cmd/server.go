@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-	dl "tools/mediadownloader"
+	"tools/mediadownloader/internal/dl"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -10,7 +10,7 @@ import (
 func main() {
 	app := fiber.New()
 
-	app.Get("/download", dl.StartDownload)
+	app.Post("/queue", dl.AddToQueue)
 
 	log.Fatalln(app.Listen(":3056"))
 }
