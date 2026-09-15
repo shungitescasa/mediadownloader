@@ -41,3 +41,4 @@ tempfiles/
 # runtime queue
 queue.json
 queue.json.tmp
+downloads/
