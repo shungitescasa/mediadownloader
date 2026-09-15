@@ -1,6 +1,8 @@
 package dl
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,17 +13,26 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/google/uuid"
 )
 
 const (
-	queueFile = "queue.json"
-	queueTTL  = time.Hour
+	queueFile         = "queue.json"
+	queueTTL          = time.Hour
+	maxURLsPerRequest = 10
+	maxQueueSize      = 200
+	maxURLLength      = 2048
+	StatusPending     = "pending"
+	StatusDownloading = "downloading"
+	StatusDone        = "done"
+	StatusFailed      = "failed"
 )
 
 type QueueTask struct {
 	ID        string    `json:"id"`
 	URL       string    `json:"url"`
+	Status    string    `json:"status"`
+	File      string    `json:"file,omitempty"`
+	Error     string    `json:"error,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
@@ -33,6 +44,11 @@ type Response struct {
 }
 
 var queueMu sync.Mutex
+
+func hashURL(rawURL string) string {
+	sum := sha256.Sum256([]byte(rawURL))
+	return hex.EncodeToString(sum[:])
+}
 
 func loadQueue() ([]QueueTask, error) {
 	raw, err := os.ReadFile(queueFile)
@@ -83,8 +99,11 @@ func collectURLs(values map[string][]string) ([]string, error) {
 				if line == "" {
 					continue
 				}
+				if len(line) > maxURLLength {
+					return nil, errors.New("url is too long")
+				}
 				u, err := url.ParseRequestURI(line)
-				if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
 					return nil, errors.New("invalid url: " + line)
 				}
 				urls = append(urls, line)
@@ -93,6 +112,9 @@ func collectURLs(values map[string][]string) ([]string, error) {
 	}
 	if len(urls) == 0 {
 		return nil, errors.New("no urls provided")
+	}
+	if len(urls) > maxURLsPerRequest {
+		return nil, errors.New("too many urls in one request")
 	}
 	return urls, nil
 }
@@ -114,17 +136,6 @@ func AddToQueue(ctx fiber.Ctx) error {
 		})
 	}
 
-	now := time.Now()
-	added := make([]QueueTask, 0, len(urls))
-	for _, u := range urls {
-		added = append(added, QueueTask{
-			ID:        uuid.NewString(),
-			URL:       u,
-			CreatedAt: now,
-			ExpiresAt: now.Add(queueTTL),
-		})
-	}
-
 	queueMu.Lock()
 	defer queueMu.Unlock()
 
@@ -136,16 +147,73 @@ func AddToQueue(ctx fiber.Ctx) error {
 		})
 	}
 
-	if err := saveQueue(append(tasks, added...)); err != nil {
-		return ctx.Status(http.StatusInternalServerError).JSON(Response{
-			StatusCode: http.StatusInternalServerError,
-			Message:    "failed to save queue",
+	existing := make(map[string]int, len(tasks))
+	for i, t := range tasks {
+		existing[t.ID] = i
+	}
+
+	now := time.Now()
+	result := make([]QueueTask, 0, len(urls))
+	seen := make(map[string]struct{}, len(urls))
+	var fresh []QueueTask
+	var retry []string
+
+	for _, u := range urls {
+		id := hashURL(u)
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+
+		if i, ok := existing[id]; ok {
+			if tasks[i].Status != StatusFailed {
+				result = append(result, tasks[i])
+				continue
+			}
+			retry = append(retry, id)
+		}
+
+		task := QueueTask{
+			ID:        id,
+			URL:       u,
+			Status:    StatusPending,
+			CreatedAt: now,
+			ExpiresAt: now.Add(queueTTL),
+		}
+		fresh = append(fresh, task)
+		result = append(result, task)
+	}
+
+	if len(tasks)-len(retry)+len(fresh) > maxQueueSize {
+		return ctx.Status(http.StatusTooManyRequests).JSON(Response{
+			StatusCode: http.StatusTooManyRequests,
+			Message:    "queue is full",
 		})
+	}
+
+	if len(fresh) > 0 {
+		drop := make(map[string]struct{}, len(retry))
+		for _, id := range retry {
+			drop[id] = struct{}{}
+		}
+		kept := tasks[:0]
+		for _, t := range tasks {
+			if _, ok := drop[t.ID]; !ok {
+				kept = append(kept, t)
+			}
+		}
+
+		if err := saveQueue(append(kept, fresh...)); err != nil {
+			return ctx.Status(http.StatusInternalServerError).JSON(Response{
+				StatusCode: http.StatusInternalServerError,
+				Message:    "failed to save queue",
+			})
+		}
 	}
 
 	return ctx.Status(http.StatusAccepted).JSON(Response{
 		StatusCode: http.StatusAccepted,
 		Message:    "queued",
-		Data:       added,
+		Data:       result,
 	})
 }
