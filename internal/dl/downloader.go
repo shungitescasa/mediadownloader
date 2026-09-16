@@ -85,7 +85,6 @@ func baseArgs(workDir string) ([]string, error) {
 
 	args := []string{
 		"--ignore-config",
-		"--no-plugin-dirs",
 		"--no-exec",
 		"--no-playlist",
 		"--no-cache-dir",
@@ -100,6 +99,7 @@ func baseArgs(workDir string) ([]string, error) {
 		"--retries", "5",
 		"--fragment-retries", "5",
 		"--extractor-retries", "3",
+		"--extractor-args", "youtube:player_client=default,-web_embedded",
 		"--paths", "temp:" + workDir,
 	}
 	return append(args, cookies...), nil
