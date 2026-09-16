@@ -162,11 +162,15 @@ func probe(ctx context.Context, workDir string, base []string, rawURL string) er
 }
 
 func DownloadTask(ctx context.Context, task QueueTask) (string, error) {
-	if err := os.MkdirAll(downloadsDir, 0o750); err != nil {
+	root, err := filepath.Abs(downloadsDir)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(root, 0o750); err != nil {
 		return "", err
 	}
 
-	workDir, err := os.MkdirTemp(downloadsDir, ".tmp-"+task.ID+"-")
+	workDir, err := os.MkdirTemp(root, ".tmp-"+task.ID+"-")
 	if err != nil {
 		return "", err
 	}
@@ -225,7 +229,7 @@ func DownloadTask(ctx context.Context, task QueueTask) (string, error) {
 	}
 
 	name := task.ID + strings.ToLower(filepath.Ext(produced))
-	if err := os.Rename(produced, filepath.Join(downloadsDir, name)); err != nil {
+	if err := os.Rename(produced, filepath.Join(root, name)); err != nil {
 		return "", err
 	}
 	return name, nil
