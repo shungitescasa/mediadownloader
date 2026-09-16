@@ -8,9 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
-	"net/netip"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,35 +16,31 @@ import (
 )
 
 const (
-	downloadsDir       = "downloads"
-	maxConcurrent      = 2
-	maxFileSize        = 500 << 20
-	maxDurationSeconds = 3600
-	maxHeight          = 720
-	probeTimeout       = 60 * time.Second
-	downloadTimeout    = 10 * time.Minute
-	maxProbeOutput     = 4 << 20
-	maxStderrCapture   = 8 << 10
-	workerInterval     = 5 * time.Second
-	ytdlpBinaryName    = "yt-dlp"
-	formatSelector     = "bv*[height<=720]+ba/b[height<=720]/b"
+	downloadsDir     = "downloads"
+	maxConcurrent    = 2
+	maxFileSize      = 2 << 30
+	maxMediaSeconds  = 600
+	probeTimeout     = 60 * time.Second
+	downloadTimeout  = 30 * time.Minute
+	maxProbeOutput   = 4 << 20
+	maxStderrCapture = 8 << 10
+	workerInterval   = 5 * time.Second
+	formatSelector   = "bv*+ba/b"
+	cookiesCopyName  = "cookies.txt"
 )
 
 var (
-	errBlockedTarget = errors.New("target is not allowed")
-	errPlaylist      = errors.New("playlists are not supported")
-	errLive          = errors.New("live streams are not supported")
-	errTooLong       = errors.New("media is too long")
-	errTooLarge      = errors.New("media is too large")
-	errNoOutput      = errors.New("download produced no file")
+	errPlaylist = errors.New("playlists are not supported")
+	errLive     = errors.New("live streams are not supported")
+	errTooLarge = errors.New("media is too large")
+	errNoOutput = errors.New("download produced no file")
 )
 
 var slots = make(chan struct{}, maxConcurrent)
 
 type probeInfo struct {
-	Type     string  `json:"_type"`
-	Duration float64 `json:"duration"`
-	IsLive   bool    `json:"is_live"`
+	Type   string `json:"_type"`
+	IsLive bool   `json:"is_live"`
 }
 
 type limitedBuffer struct {
@@ -66,103 +59,67 @@ func (l *limitedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func ytdlpPath() (string, error) {
-	if p := os.Getenv("YTDLP_PATH"); p != "" {
-		return p, nil
+func cookieArgs(workDir string) ([]string, error) {
+	switch cfg.CookiesMode {
+	case CookiesFile:
+		raw, err := os.ReadFile(cfg.CookiesFile)
+		if err != nil {
+			return nil, err
+		}
+		copyPath := filepath.Join(workDir, cookiesCopyName)
+		if err := os.WriteFile(copyPath, raw, 0o600); err != nil {
+			return nil, err
+		}
+		return []string{"--cookies", copyPath}, nil
+	case CookiesBrowser:
+		return []string{"--cookies-from-browser", cfg.CookiesBrowser}, nil
 	}
-	return exec.LookPath(ytdlpBinaryName)
+	return nil, nil
 }
 
-func isPublicAddr(a netip.Addr) bool {
-	a = a.Unmap()
-	if !a.IsGlobalUnicast() || a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() || a.IsMulticast() || a.IsUnspecified() {
-		return false
-	}
-	if a.Is4() {
-		cgnat := netip.MustParsePrefix("100.64.0.0/10")
-		if cgnat.Contains(a) {
-			return false
-		}
-	}
-	return true
-}
-
-func checkTarget(ctx context.Context, rawURL string) error {
-	u, err := url.Parse(rawURL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
-		return errBlockedTarget
+func baseArgs(workDir string) ([]string, error) {
+	cookies, err := cookieArgs(workDir)
+	if err != nil {
+		return nil, err
 	}
 
-	if port := u.Port(); port != "" && port != "80" && port != "443" {
-		return errBlockedTarget
-	}
-
-	host := u.Hostname()
-	if host == "" || strings.EqualFold(host, "localhost") {
-		return errBlockedTarget
-	}
-
-	if a, err := netip.ParseAddr(host); err == nil {
-		if !isPublicAddr(a) {
-			return errBlockedTarget
-		}
-		return nil
-	}
-
-	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
-	if err != nil || len(addrs) == 0 {
-		return errBlockedTarget
-	}
-	for _, a := range addrs {
-		if !isPublicAddr(a) {
-			return errBlockedTarget
-		}
-	}
-	return nil
-}
-
-func baseArgs(workDir string) []string {
-	return []string{
+	args := []string{
 		"--ignore-config",
 		"--no-plugin-dirs",
 		"--no-exec",
 		"--no-playlist",
 		"--no-cache-dir",
-		"--no-cookies",
-		"--no-netrc",
 		"--no-write-info-json",
 		"--no-write-thumbnail",
 		"--no-write-subs",
 		"--no-write-comments",
-		"--no-embed-subs",
-		"--no-embed-thumbnail",
-		"--no-embed-metadata",
-		"--no-embed-chapters",
-		"--no-write-playlist-metafiles",
 		"--no-mtime",
 		"--no-colors",
 		"--no-warnings",
-		"--socket-timeout", "15",
-		"--retries", "3",
-		"--fragment-retries", "3",
-		"--extractor-retries", "2",
+		"--socket-timeout", "30",
+		"--retries", "5",
+		"--fragment-retries", "5",
+		"--extractor-retries", "3",
 		"--paths", "temp:" + workDir,
 	}
+	return append(args, cookies...), nil
 }
 
-func runYtdlp(ctx context.Context, workDir string, stdout io.Writer, args []string) error {
-	bin, err := ytdlpPath()
-	if err != nil {
-		return fmt.Errorf("yt-dlp not found: %w", err)
+func ytdlpEnv(workDir string) []string {
+	if cfg.CookiesMode == CookiesBrowser {
+		return os.Environ()
 	}
-
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = workDir
-	cmd.Env = []string{
+	return []string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + workDir,
 		"LANG=C.UTF-8",
 	}
+}
+
+func runYtdlp(ctx context.Context, workDir string, stdout io.Writer, args []string) error {
+	cmd := exec.CommandContext(ctx, cfg.Binary, args...)
+	cmd.Dir = workDir
+	cmd.Env = ytdlpEnv(workDir)
 	cmd.Stdin = nil
 	cmd.Stdout = stdout
 	stderr := &limitedBuffer{max: maxStderrCapture}
@@ -175,12 +132,12 @@ func runYtdlp(ctx context.Context, workDir string, stdout io.Writer, args []stri
 	return nil
 }
 
-func probe(ctx context.Context, workDir, rawURL string) error {
+func probe(ctx context.Context, workDir string, base []string, rawURL string) error {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 
 	out := &limitedBuffer{max: maxProbeOutput}
-	args := append(baseArgs(workDir),
+	args := append(append([]string{}, base...),
 		"--skip-download",
 		"--dump-single-json",
 		"--",
@@ -200,8 +157,6 @@ func probe(ctx context.Context, workDir, rawURL string) error {
 		return errPlaylist
 	case info.IsLive:
 		return errLive
-	case info.Duration > maxDurationSeconds:
-		return errTooLong
 	}
 	return nil
 }
@@ -211,27 +166,28 @@ func DownloadTask(ctx context.Context, task QueueTask) (string, error) {
 		return "", err
 	}
 
-	if err := checkTarget(ctx, task.URL); err != nil {
-		return "", err
-	}
-
 	workDir, err := os.MkdirTemp(downloadsDir, ".tmp-"+task.ID+"-")
 	if err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(workDir)
 
-	if err := probe(ctx, workDir, task.URL); err != nil {
+	base, err := baseArgs(workDir)
+	if err != nil {
+		return "", err
+	}
+
+	if err := probe(ctx, workDir, base, task.URL); err != nil {
 		return "", err
 	}
 
 	dlCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
 
-	args := append(baseArgs(workDir),
+	args := append(append([]string{}, base...),
 		"--max-filesize", fmt.Sprint(maxFileSize),
-		"--limit-rate", "10M",
 		"--playlist-items", "1",
+		"--download-sections", fmt.Sprintf("*0-%d", maxMediaSeconds),
 		"--restrict-filenames",
 		"--merge-output-format", "mp4",
 		"-f", formatSelector,
@@ -276,7 +232,7 @@ func DownloadTask(ctx context.Context, task QueueTask) (string, error) {
 }
 
 func safeError(err error) string {
-	for _, known := range []error{errBlockedTarget, errPlaylist, errLive, errTooLong, errTooLarge, errNoOutput} {
+	for _, known := range []error{errPlaylist, errLive, errTooLarge, errNoOutput} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}
