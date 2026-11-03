@@ -20,6 +20,7 @@ func main() {
 	app := fiber.New()
 
 	app.Post("/queue", dl.AddToQueue)
+	app.Get("/download", dl.Download)
 
 	log.Fatalln(app.Listen(":3056"))
 }
