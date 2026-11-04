@@ -1,0 +1,216 @@
+:root {
+    --background: #fff;
+    --foreground: #000;
+
+    --accent-background: #000;
+    --accent-background-hover: #303030;
+    --accent-foreground: #fff;
+
+    --input-background: #fff;
+    --input-background-hover: #ddd;
+
+    --status-success-background: #d9f2e0;
+    --status-success-foreground: #2e9e4f;
+    --status-progress-background: #fff3c4;
+    --status-progress-foreground: #d4a017;
+    --status-pending-background: #eee;
+    --status-pending-foreground: #bbb;
+    --status-error-background: #fbdcdc;
+    --status-error-foreground: #d33;
+
+    --pad: 3rem;
+    --page-width: 40rem;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0 1rem;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 14px;
+    color: var(--foreground);
+    background: var(--background);
+}
+
+header,
+main,
+footer {
+    max-width: var(--page-width);
+    margin: var(--pad) auto;
+    text-align: center;
+}
+
+section {
+    margin: 0.5rem 0;
+}
+
+form {
+    display: flex;
+    gap: 0rem;
+}
+
+input,
+button {
+    font: inherit;
+    border: 1px solid var(--foreground);
+
+    border-radius: 0;
+    background: var(--input-background);
+    padding: 0.4rem 0.6rem;
+}
+
+form button[type="submit"] {
+    border-left: none;
+    border: 1px solid var(--accent-background);
+    background: var(--accent-background);
+    color: var(--accent-foreground);
+}
+
+form button[type="submit"]:hover {
+    background: var(--accent-background-hover);
+}
+
+input {
+    flex: 1;
+    min-width: 0;
+}
+
+button {
+    cursor: pointer;
+}
+
+button:hover {
+    background: var(--input-background-hover);
+}
+
+button:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
+#error {
+    margin: 0.75rem 0 0;
+    color: #d33;
+}
+
+#queue {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.task {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid;
+    text-align: left;
+}
+
+.task img {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    image-rendering: pixelated;
+}
+
+.task .info {
+    flex: 1;
+    min-width: 0;
+}
+
+.task .link,
+.task .state {
+    display: block;
+    white-space: nowrap;
+}
+
+.task a.link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.task a.link:hover {
+    text-decoration: underline;
+}
+
+.task .link {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.task .state {
+    margin-top: 0.15rem;
+    font-size: 12px;
+    opacity: 0.75;
+}
+
+.task .actions {
+    display: flex;
+    gap: 0.4rem;
+    flex: none;
+}
+
+.task .actions a,
+.task .actions button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: inherit;
+    background: var(--input-background);
+    border: 1px solid currentColor;
+    padding: 0.3rem;
+    cursor: pointer;
+}
+
+.task .actions button:hover,
+.task .actions a:hover {
+    background: var(--input-background-hover);
+}
+
+.task .actions img {
+    width: 16px;
+    height: 16px;
+    image-rendering: pixelated;
+}
+
+.task.pending {
+    color: var(--status-pending-foreground);
+    background: var(--status-pending-background);
+    border-color: var(--status-pending-foreground);
+}
+
+.task.downloading {
+    color: var(--status-progress-foreground);
+    background: var(--status-progress-background);
+    border-color: var(--status-progress-foreground);
+}
+
+.task.done {
+    color: var(--status-success-foreground);
+    background: var(--status-success-background);
+    border-color: var(--status-success-foreground);
+}
+
+.task.failed {
+    color: var(--status-error-foreground);
+    background: var(--status-error-background);
+    border-color: var(--status-error-foreground);
+}
+
+.task.deleted {
+    color: var(--status-pending-foreground);
+    background: var(--status-pending-background);
+    border-color: var(--status-pending-foreground);
+    border-style: dashed;
+}
+
+.task.deleted .link {
+    text-decoration: line-through;
+}

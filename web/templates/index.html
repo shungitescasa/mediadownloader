@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{{.Title}}</title>
+        <link rel="stylesheet" href="/static/style.css" />
+        <link rel="favicon" href="/favicon.ico" />
+    </head>
+    <body>
+        <header>
+            <h1>
+                <img
+                    src="/static/img/brand/big.webp"
+                    alt="{{.Title}}"
+                    title="{{.Title}}"
+                />
+            </h1>
+        </header>
+        <main>
+            <form id="form">
+                <input
+                    id="url"
+                    name="url"
+                    type="url"
+                    placeholder="paste link from X/Twitter, Instagram, YouTube or other site..."
+                    required
+                    autofocus
+                    autocomplete="off"
+                />
+                <button type="submit">submit</button>
+            </form>
+            <p id="error"></p>
+            <section id="queue"></section>
+        </main>
+    </body>
+
+    <script src="/static/app.js"></script>
+</html>

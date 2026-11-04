@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 	"tools/mediadownloader/internal/dl"
+	"tools/mediadownloader/web"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -19,6 +20,8 @@ func main() {
 
 	app := fiber.New()
 
+	app.Get("/", web.Index)
+	app.Use("/static", web.Static())
 	app.Post("/queue", dl.AddToQueue)
 	app.Get("/download", dl.Download)
 	app.Get("/track", dl.Track)
