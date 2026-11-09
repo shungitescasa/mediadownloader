@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 )
 
@@ -37,6 +39,25 @@ var (
 )
 
 var slots = make(chan struct{}, maxConcurrent)
+
+var (
+	runningMu sync.Mutex
+	running   = map[string]context.CancelFunc{}
+)
+
+type claimedTask struct {
+	task QueueTask
+	ctx  context.Context
+}
+
+func cancelRunning(id string) {
+	runningMu.Lock()
+	cancel := running[id]
+	runningMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
 
 type probeInfo struct {
 	Type   string `json:"_type"`
@@ -125,6 +146,10 @@ func runYtdlp(ctx context.Context, workDir string, stdout io.Writer, args []stri
 	stderr := &limitedBuffer{max: maxStderrCapture}
 	cmd.Stderr = stderr
 	cmd.WaitDelay = 5 * time.Second
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.buf.String()))
@@ -269,6 +294,11 @@ func updateTask(id string, fn func(*QueueTask)) {
 
 func runTask(ctx context.Context, task QueueTask) {
 	defer func() { <-slots }()
+	defer func() {
+		runningMu.Lock()
+		delete(running, task.ID)
+		runningMu.Unlock()
+	}()
 
 	name, err := DownloadTask(ctx, task)
 	if err != nil {
@@ -315,7 +345,7 @@ func cleanupFiles(tasks []QueueTask) {
 	}
 }
 
-func claimPending() []QueueTask {
+func claimPending(parent context.Context) []claimedTask {
 	queueMu.Lock()
 	defer queueMu.Unlock()
 
@@ -327,7 +357,7 @@ func claimPending() []QueueTask {
 
 	cleanupFiles(tasks)
 
-	var claimed []QueueTask
+	var claimed []claimedTask
 	for i := range tasks {
 		if tasks[i].Status != StatusPending {
 			continue
@@ -335,7 +365,11 @@ func claimPending() []QueueTask {
 		select {
 		case slots <- struct{}{}:
 			tasks[i].Status = StatusDownloading
-			claimed = append(claimed, tasks[i])
+			ctx, cancel := context.WithCancel(parent)
+			runningMu.Lock()
+			running[tasks[i].ID] = cancel
+			runningMu.Unlock()
+			claimed = append(claimed, claimedTask{task: tasks[i], ctx: ctx})
 		default:
 		}
 	}
@@ -343,8 +377,12 @@ func claimPending() []QueueTask {
 	if len(claimed) > 0 {
 		if err := saveQueue(tasks); err != nil {
 			log.Println("queue save failed:", err)
-			for range claimed {
+			for _, c := range claimed {
 				<-slots
+				cancelRunning(c.task.ID)
+				runningMu.Lock()
+				delete(running, c.task.ID)
+				runningMu.Unlock()
 			}
 			return nil
 		}
@@ -373,8 +411,8 @@ func resetInterrupted() {
 }
 
 func ProcessQueue(ctx context.Context) {
-	for _, task := range claimPending() {
-		go runTask(ctx, task)
+	for _, c := range claimPending(ctx) {
+		go runTask(c.ctx, c.task)
 	}
 }
 

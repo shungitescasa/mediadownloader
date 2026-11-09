@@ -8,6 +8,7 @@ const ICONS = {
   music: "/static/img/icons/music.png",
   download: "/static/img/icons/download.png",
   erase: "/static/img/icons/erase.png",
+  stop: "/static/img/icons/stop.png",
 };
 
 const STATES = {
@@ -103,10 +104,20 @@ function actionIcon(name) {
   return icon;
 }
 
-function setActions(entry, withDownload) {
+function setActions(entry, status) {
   entry.actions.textContent = "";
 
-  if (withDownload) {
+  if (status === "pending" || status === "downloading") {
+    const stopButton = element("button");
+    stopButton.type = "button";
+    stopButton.title = "stop";
+    stopButton.setAttribute("aria-label", "stop");
+    stopButton.append(actionIcon("stop"));
+    stopButton.addEventListener("click", () => stop(entry));
+    entry.actions.append(stopButton);
+  }
+
+  if (status === "done") {
     const download = element("a");
     download.href = "/download?id=" + encodeURIComponent(entry.id);
     download.title = "download";
@@ -120,7 +131,7 @@ function setActions(entry, withDownload) {
   erase.title = "erase";
   erase.setAttribute("aria-label", "erase");
   erase.append(actionIcon("erase"));
-  erase.addEventListener("click", () => remove(entry.id));
+  erase.addEventListener("click", () => remove(entry));
   entry.actions.append(erase);
 }
 
@@ -136,7 +147,7 @@ function markDeleted(entry) {
   entry.deleted = true;
   entry.item.className = "task deleted";
   entry.state.textContent = STATES.deleted;
-  setActions(entry, false);
+  setActions(entry, null);
 }
 
 function tick(entry) {
@@ -166,7 +177,7 @@ function render(entry, task) {
 
   entry.item.className = "task " + task.status;
   entry.state.textContent = STATES[task.status] || task.status;
-  setActions(entry, task.status === "done");
+  setActions(entry, task.status);
 
   if (task.status === "done") {
     startCountdown(entry);
@@ -184,14 +195,10 @@ function fail(entry, message) {
   stopTimer(entry);
   entry.item.className = "task failed";
   entry.state.textContent = message;
-  setActions(entry, false);
+  setActions(entry, null);
 }
 
-function remove(id) {
-  const entry = entries.get(id);
-  if (!entry) {
-    return;
-  }
+function remove(entry) {
 
   const index = waiting.indexOf(entry);
   if (index >= 0) {
@@ -204,7 +211,41 @@ function remove(id) {
   }
   stopTimer(entry);
   entry.item.remove();
-  entries.delete(id);
+  if (entries.get(entry.id) === entry) {
+    entries.delete(entry.id);
+  }
+  release(entry);
+}
+
+async function stop(entry) {
+  const local = entry.id.startsWith("local-");
+  const index = waiting.indexOf(entry);
+  if (index >= 0) {
+    waiting.splice(index, 1);
+  }
+
+  if (!local) {
+    try {
+      const response = await fetch(
+        "/stop?id=" + encodeURIComponent(entry.id),
+        { method: "DELETE" },
+      );
+      if (!response.ok && response.status !== 404) {
+        showError("failed to stop the task");
+        return;
+      }
+    } catch (err) {
+      showError("failed to stop the task");
+      return;
+    }
+  }
+
+  entry.removed = true;
+  entry.stopped = true;
+  if (entry.source) {
+    entry.source.close();
+  }
+  markDeleted(entry);
   release(entry);
 }
 
@@ -252,6 +293,11 @@ async function start(entry) {
   }
 
   if (entry.removed) {
+    if (entry.stopped && response.status === 202 && body.data && body.data[0]) {
+      fetch("/stop?id=" + encodeURIComponent(body.data[0].id), {
+        method: "DELETE",
+      }).catch(() => {});
+    }
     return;
   }
 
@@ -262,7 +308,8 @@ async function start(entry) {
   }
 
   const task = body.data[0];
-  if (entries.has(task.id)) {
+  const existing = entries.get(task.id);
+  if (existing && !existing.deleted) {
     entry.item.remove();
     entries.delete(entry.id);
     entry.removed = true;

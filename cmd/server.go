@@ -25,6 +25,7 @@ func main() {
 	app.Post("/queue", dl.AddToQueue)
 	app.Get("/download", dl.Download)
 	app.Get("/track", dl.Track)
+	app.Delete("/stop", dl.Stop)
 
 	log.Fatalln(app.Listen(":3056"))
 }

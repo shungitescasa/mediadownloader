@@ -90,3 +90,41 @@ func Download(ctx fiber.Ctx) error {
 
 	return ctx.SendStream(f, int(st.Size()))
 }
+
+func Stop(ctx fiber.Ctx) error {
+	id := ctx.Query("id")
+	if !isHashID(id) {
+		return reply(ctx, http.StatusBadRequest, "invalid id")
+	}
+
+	queueMu.Lock()
+	tasks, err := loadQueue()
+	if err != nil {
+		queueMu.Unlock()
+		return reply(ctx, http.StatusInternalServerError, "failed to read queue")
+	}
+
+	kept := make([]QueueTask, 0, len(tasks))
+	found := false
+	for _, t := range tasks {
+		if t.ID == id {
+			found = true
+			continue
+		}
+		kept = append(kept, t)
+	}
+	if !found {
+		queueMu.Unlock()
+		return reply(ctx, http.StatusNotFound, "not found")
+	}
+
+	if err := saveQueue(kept); err != nil {
+		queueMu.Unlock()
+		return reply(ctx, http.StatusInternalServerError, "failed to save queue")
+	}
+	queueMu.Unlock()
+
+	cancelRunning(id)
+
+	return reply(ctx, http.StatusOK, "stopped")
+}
