@@ -8,6 +8,8 @@
 
     --input-background: #fff;
     --input-background-hover: #ddd;
+    --input-foreground: #000;
+    --input-foreground-placeholder: #808080;
 
     --status-success-background: #d9f2e0;
     --status-success-foreground: #2e9e4f;
@@ -92,12 +94,19 @@ form {
 
 input,
 button {
+    color: var(--input-foreground);
     font: inherit;
-    border: 1px solid var(--foreground);
+    border: 1px solid var(--input-foreground);
 
     border-radius: 0;
     background: var(--input-background);
     padding: 0.4rem 0.6rem;
+
+    outline: none;
+}
+
+input::placeholder {
+    color: var(--input-foreground-placeholder);
 }
 
 form button[type="submit"] {
@@ -249,4 +258,29 @@ button:disabled {
 
 .task.deleted .link {
     text-decoration: line-through;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --background: #303030;
+        --foreground: #fff;
+
+        --accent-background: #84ff80;
+        --accent-background-hover: #deffdd;
+        --accent-foreground: #000000;
+
+        --input-background: #3d3d3d;
+        --input-background-hover: #202020;
+        --input-foreground: #84ff80;
+        --input-foreground-placeholder: #8f8f8f;
+
+        --status-success-background: #33523c;
+        --status-success-foreground: #96ffb6;
+        --status-progress-background: #5a543d;
+        --status-progress-foreground: #ffe297;
+        --status-pending-background: #818181;
+        --status-pending-foreground: #e9e9e9;
+        --status-error-background: #462222;
+        --status-error-foreground: #ff9e9e;
+    }
 }
