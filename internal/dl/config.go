@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -15,7 +16,20 @@ const (
 	CookiesBrowser = "browser"
 )
 
-const defaultConfig = `[yt-dlp]
+const defaultConfig = `[server]
+; address to listen on, host:port (empty host means all interfaces)
+listen = :3056
+
+[instance]
+; name shown in the page title
+name = mediadownloader
+
+[maintainer]
+; shown in the footer; the link is optional
+name =
+link =
+
+[yt-dlp]
 binary = yt-dlp
 
 [cookies]
@@ -33,16 +47,29 @@ var supportedBrowsers = map[string]struct{}{
 }
 
 type Config struct {
+	Listen         string
+	InstanceName   string
+	MaintainerName string
+	MaintainerLink string
+	YtdlpVersion   string
 	Binary         string
 	CookiesMode    string
 	CookiesFile    string
 	CookiesBrowser string
 }
 
-var cfg = Config{Binary: "yt-dlp", CookiesMode: CookiesNone}
+var cfg = defaultSettings()
+
+func defaultSettings() Config {
+	return Config{Listen: ":3056", InstanceName: "mediadownloader", Binary: "yt-dlp", CookiesMode: CookiesNone}
+}
+
+func Settings() Config {
+	return cfg
+}
 
 func parseConfig(path string) (Config, error) {
-	c := Config{Binary: "yt-dlp", CookiesMode: CookiesNone}
+	c := defaultSettings()
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -70,6 +97,18 @@ func parseConfig(path string) (Config, error) {
 		value = strings.TrimSpace(value)
 
 		switch section + "." + key {
+		case "server.listen":
+			if value != "" {
+				c.Listen = value
+			}
+		case "instance.name":
+			if value != "" {
+				c.InstanceName = value
+			}
+		case "maintainer.name":
+			c.MaintainerName = value
+		case "maintainer.link":
+			c.MaintainerLink = value
 		case "yt-dlp.binary":
 			if value != "" {
 				c.Binary = value
@@ -92,6 +131,12 @@ func parseConfig(path string) (Config, error) {
 }
 
 func (c Config) validate() error {
+	if c.MaintainerLink != "" {
+		u, err := url.Parse(c.MaintainerLink)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "mailto") || (u.Scheme != "mailto" && u.Host == "") {
+			return errors.New("maintainer.link must be an http(s) or mailto link")
+		}
+	}
 	switch c.CookiesMode {
 	case CookiesNone:
 	case CookiesFile:
@@ -138,10 +183,12 @@ func Init(path string) {
 	if err != nil {
 		panic(fmt.Errorf("yt-dlp is not available: %w", err))
 	}
-	if out, err := exec.Command(bin, "--version").CombinedOutput(); err != nil {
+	out, err := exec.Command(bin, "--version").CombinedOutput()
+	if err != nil {
 		panic(fmt.Errorf("yt-dlp failed to run: %w: %s", err, strings.TrimSpace(string(out))))
 	}
 
 	c.Binary = bin
+	c.YtdlpVersion = strings.TrimSpace(string(out))
 	cfg = c
 }

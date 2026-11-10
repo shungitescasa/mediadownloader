@@ -50,6 +50,41 @@
             <p id="error"></p>
             <section id="queue"></section>
         </main>
+        <footer>
+            {{if .Maintainer}}
+            <p>
+                maintained by {{if .MaintainerLink}}<a
+                    href="{{.MaintainerLink}}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >{{.Maintainer}}</a
+                >{{else}}{{.Maintainer}}{{end}}
+            </p>
+            {{end}}
+            <p>
+                powered by
+                <a
+                    href="https://github.com/yt-dlp/yt-dlp"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >yt-dlp</a
+                >
+                {{.YtdlpVersion}} &middot;
+                <a
+                    href="https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >supported platforms</a
+                >
+                &middot;
+                <a
+                    href="https://github.com/shungitescasa/mediadownloader"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >source code</a
+                >
+            </p>
+        </footer>
     </body>
 
     <script src="/static/app.js"></script>

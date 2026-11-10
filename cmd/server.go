@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os/signal"
 	"syscall"
@@ -12,10 +13,13 @@ import (
 )
 
 func main() {
+	configPath := flag.String("config", "mediadownloader.ini", "path to the configuration file")
+	flag.Parse()
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	dl.Init("mediadownloader.ini")
+	dl.Init(*configPath)
 	dl.StartWorker(ctx)
 
 	app := fiber.New()
@@ -27,5 +31,5 @@ func main() {
 	app.Get("/track", dl.Track)
 	app.Delete("/stop", dl.Stop)
 
-	log.Fatalln(app.Listen(":3056"))
+	log.Fatalln(app.Listen(dl.Settings().Listen))
 }

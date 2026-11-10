@@ -45,6 +45,15 @@ footer {
     text-align: center;
 }
 
+footer {
+    font-size: 10px;
+    opacity: 0.7;
+}
+
+footer a {
+    color: inherit;
+}
+
 section {
     margin: 0.5rem 0;
 }
