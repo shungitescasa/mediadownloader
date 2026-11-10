@@ -51,7 +51,34 @@ section {
 
 form {
     display: flex;
+    flex-wrap: wrap;
     gap: 0rem;
+}
+
+#types {
+    display: flex;
+    flex: 0 0 100%;
+    gap: 1rem;
+    margin-top: 0.6rem;
+    border: none;
+}
+
+#types label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+}
+
+#types input {
+    flex: none;
+    padding: 0;
+}
+
+#types img {
+    width: 16px;
+    height: 16px;
+    image-rendering: pixelated;
 }
 
 input,

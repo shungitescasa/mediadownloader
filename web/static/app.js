@@ -5,7 +5,8 @@ const list = document.getElementById("queue");
 
 const ICONS = {
   video: "/static/img/icons/video.png",
-  music: "/static/img/icons/music.png",
+  audio: "/static/img/icons/audio.png",
+  meta: "/static/img/icons/meta.png",
   download: "/static/img/icons/download.png",
   erase: "/static/img/icons/erase.png",
   stop: "/static/img/icons/stop.png",
@@ -44,10 +45,6 @@ function showError(message) {
   error.hidden = !message;
 }
 
-function taskType() {
-  return "video";
-}
-
 function element(tag, className, text) {
   const node = document.createElement(tag);
   if (className) {
@@ -63,7 +60,7 @@ function build(task, skew) {
   const item = element("div", "task");
 
   const icon = element("img");
-  const type = taskType(task);
+  const type = ICONS[task.type] ? task.type : "video";
   icon.src = ICONS[type];
   icon.alt = type;
   icon.width = 16;
@@ -92,6 +89,7 @@ function build(task, skew) {
     expiresAt: Date.parse(task.expires_at),
     skew,
     url: task.url,
+    type: task.type,
   };
 }
 
@@ -277,6 +275,7 @@ async function start(entry) {
   console.log(entry);
   const data = new FormData();
   data.append("url", entry.url);
+  data.append("type", entry.type);
 
   let response;
   let body;
@@ -345,9 +344,9 @@ function pump() {
   start(next);
 }
 
-function enqueue(url) {
+function enqueue(url, type) {
   counter += 1;
-  const entry = build({ id: "local-" + counter, url }, 0);
+  const entry = build({ id: "local-" + counter, url, type }, 0);
   entry.removed = false;
   entries.set(entry.id, entry);
   render(entry, { status: "pending" });
@@ -365,7 +364,7 @@ form.addEventListener("submit", (event) => {
     return;
   }
 
-  enqueue(url);
-  form.reset();
+  enqueue(url, new FormData(form).get("type") || "video");
+  input.value = "";
   input.focus();
 });

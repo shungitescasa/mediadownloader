@@ -157,7 +157,7 @@ func runYtdlp(ctx context.Context, workDir string, stdout io.Writer, args []stri
 	return nil
 }
 
-func probe(ctx context.Context, workDir string, base []string, rawURL string) error {
+func probe(ctx context.Context, workDir string, base []string, rawURL string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 
@@ -169,21 +169,28 @@ func probe(ctx context.Context, workDir string, base []string, rawURL string) er
 		rawURL,
 	)
 	if err := runYtdlp(ctx, workDir, out, args); err != nil {
-		return err
+		return nil, err
 	}
 
 	var info probeInfo
 	if err := json.Unmarshal(out.buf.Bytes(), &info); err != nil {
-		return err
+		return nil, err
 	}
 
 	switch {
 	case info.Type == "playlist" || info.Type == "multi_video" || info.Type == "multi_video_list":
-		return errPlaylist
+		return nil, errPlaylist
 	case info.IsLive:
-		return errLive
+		return nil, errLive
 	}
-	return nil
+	return out.buf.Bytes(), nil
+}
+
+func downloadArgs(task QueueTask) []string {
+	if task.Type == TypeAudio {
+		return []string{"-f", "ba/b", "-x", "--audio-format", "mp3"}
+	}
+	return []string{"--merge-output-format", "mp4", "-f", formatSelector}
 }
 
 func DownloadTask(ctx context.Context, task QueueTask) (string, error) {
@@ -206,26 +213,34 @@ func DownloadTask(ctx context.Context, task QueueTask) (string, error) {
 		return "", err
 	}
 
-	if err := probe(ctx, workDir, base, task.URL); err != nil {
+	info, err := probe(ctx, workDir, base, task.URL)
+	if err != nil {
 		return "", err
 	}
 
-	dlCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
-	defer cancel()
+	if task.Type == TypeMeta {
+		if err := os.WriteFile(filepath.Join(workDir, task.ID+".json"), info, 0o600); err != nil {
+			return "", err
+		}
+	} else {
+		dlCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
+		defer cancel()
 
-	args := append(append([]string{}, base...),
-		"--max-filesize", fmt.Sprint(maxFileSize),
-		"--playlist-items", "1",
-		"--download-sections", fmt.Sprintf("*0-%d", maxMediaSeconds),
-		"--restrict-filenames",
-		"--merge-output-format", "mp4",
-		"-f", formatSelector,
-		"-o", filepath.Join(workDir, task.ID+".%(ext)s"),
-		"--",
-		task.URL,
-	)
-	if err := runYtdlp(dlCtx, workDir, io.Discard, args); err != nil {
-		return "", err
+		args := append(append([]string{}, base...),
+			"--max-filesize", fmt.Sprint(maxFileSize),
+			"--playlist-items", "1",
+			"--download-sections", fmt.Sprintf("*0-%d", maxMediaSeconds),
+			"--restrict-filenames",
+		)
+		args = append(args, downloadArgs(task)...)
+		args = append(args,
+			"-o", filepath.Join(workDir, task.ID+".%(ext)s"),
+			"--",
+			task.URL,
+		)
+		if err := runYtdlp(dlCtx, workDir, io.Discard, args); err != nil {
+			return "", err
+		}
 	}
 
 	matches, err := filepath.Glob(filepath.Join(workDir, task.ID+".*"))

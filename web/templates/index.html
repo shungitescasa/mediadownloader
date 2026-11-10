@@ -29,6 +29,23 @@
                     autocomplete="off"
                 />
                 <button type="submit">submit</button>
+                <fieldset id="types">
+                    <label>
+                        <input type="radio" name="type" value="video" checked />
+                        <img src="/static/img/icons/video.png" alt="" />
+                        <span>video</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="type" value="audio" />
+                        <img src="/static/img/icons/audio.png" alt="" />
+                        <span>audio</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="type" value="meta" />
+                        <img src="/static/img/icons/meta.png" alt="" />
+                        <span>meta</span>
+                    </label>
+                </fieldset>
             </form>
             <p id="error"></p>
             <section id="queue"></section>

@@ -25,11 +25,15 @@ const (
 	StatusDownloading = "downloading"
 	StatusDone        = "done"
 	StatusFailed      = "failed"
+	TypeVideo         = "video"
+	TypeAudio         = "audio"
+	TypeMeta          = "meta"
 )
 
 type QueueTask struct {
 	ID        string    `json:"id"`
 	URL       string    `json:"url"`
+	Type      string    `json:"type"`
 	Status    string    `json:"status"`
 	File      string    `json:"file,omitempty"`
 	Error     string    `json:"error,omitempty"`
@@ -45,8 +49,12 @@ type Response struct {
 
 var queueMu sync.Mutex
 
-func hashURL(rawURL string) string {
-	sum := sha256.Sum256([]byte(rawURL))
+func validType(t string) bool {
+	return t == TypeVideo || t == TypeAudio || t == TypeMeta
+}
+
+func hashTask(kind, rawURL string) string {
+	sum := sha256.Sum256([]byte(kind + "\n" + rawURL))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -136,6 +144,17 @@ func AddToQueue(ctx fiber.Ctx) error {
 		})
 	}
 
+	kind := TypeVideo
+	if v := form.Value["type"]; len(v) > 0 && v[0] != "" {
+		kind = v[0]
+	}
+	if !validType(kind) {
+		return ctx.Status(http.StatusBadRequest).JSON(Response{
+			StatusCode: http.StatusBadRequest,
+			Message:    "invalid type",
+		})
+	}
+
 	queueMu.Lock()
 	defer queueMu.Unlock()
 
@@ -159,7 +178,7 @@ func AddToQueue(ctx fiber.Ctx) error {
 	var retry []string
 
 	for _, u := range urls {
-		id := hashURL(u)
+		id := hashTask(kind, u)
 		if _, dup := seen[id]; dup {
 			continue
 		}
@@ -176,6 +195,7 @@ func AddToQueue(ctx fiber.Ctx) error {
 		task := QueueTask{
 			ID:        id,
 			URL:       u,
+			Type:      kind,
 			Status:    StatusPending,
 			CreatedAt: now,
 			ExpiresAt: now.Add(queueTTL),
