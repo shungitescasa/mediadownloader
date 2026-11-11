@@ -44,9 +44,8 @@
             href="{{.CommitURL}}"
             target="_blank"
             rel="nofollow noopener noreferrer"
+            >{{.Version}}</a
         >
-            {{.Version}}
-        </a>
         {{else}} dev {{end}} {{if .BuildTime}}({{.BuildTime}}){{end}}
     </p>
 </footer>
