@@ -50,10 +50,10 @@ jobs:
       - name: Build in Alpine container
         run: |
           docker run --rm -v "$PWD":/src -w /src \
-            -e CGO_ENABLED=0 -e GOTOOLCHAIN=auto -e LDFLAGS \
+            -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH=arm64 -e GOTOOLCHAIN=auto -e LDFLAGS \
             golang:${{ steps.gover.outputs.version }}-alpine \
-            sh -c 'go build -trimpath -ldflags="$LDFLAGS" -o mediadownloader-alpine-amd64 ./cmd'
+            sh -c 'go build -trimpath -ldflags="$LDFLAGS" -o mediadownloader-alpine-aarch64 ./cmd'
       - uses: actions/upload-artifact@v4
         with:
-          name: mediadownloader-alpine-amd64
-          path: mediadownloader-alpine-amd64
+          name: mediadownloader-alpine-aarch64
+          path: mediadownloader-alpine-aarch64
