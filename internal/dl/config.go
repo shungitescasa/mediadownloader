@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -33,6 +34,21 @@ link =
 [downloads]
 ; maximum number of downloads running at the same time
 max_parallel = 4
+; maximum size of a downloaded file: bytes or a number with K, M or G suffix
+max_filesize = 2G
+; only the first N seconds of the media are downloaded
+max_media_seconds = 600
+; directory where finished files are stored
+directory = downloads
+; yt-dlp format selector for video downloads
+format = bv*+ba/b
+
+[queue]
+; how long a task is kept (e.g. 30m, 1h, 90m)
+ttl = 1h
+max_urls_per_request = 10
+max_size = 200
+max_url_length = 2048
 
 [yt-dlp]
 binary = yt-dlp
@@ -53,6 +69,14 @@ var supportedBrowsers = map[string]struct{}{
 
 type Config struct {
 	MaxParallel    int
+	MaxFileSize    int64
+	MaxMediaSecs   int
+	DownloadsDir   string
+	FormatSelector string
+	QueueTTL       time.Duration
+	MaxURLsPerReq  int
+	MaxQueueSize   int
+	MaxURLLength   int
 	Listen         string
 	InstanceName   string
 	MaintainerName string
@@ -67,11 +91,55 @@ type Config struct {
 var cfg = defaultSettings()
 
 func defaultSettings() Config {
-	return Config{MaxParallel: 4, Listen: ":3056", InstanceName: "mediadownloader", Binary: "yt-dlp", CookiesMode: CookiesNone}
+	return Config{
+		MaxParallel:    4,
+		MaxFileSize:    2 << 30,
+		MaxMediaSecs:   600,
+		DownloadsDir:   "downloads",
+		FormatSelector: "bv*+ba/b",
+		QueueTTL:       time.Hour,
+		MaxURLsPerReq:  10,
+		MaxQueueSize:   200,
+		MaxURLLength:   2048,
+		Listen:         ":3056",
+		InstanceName:   "mediadownloader",
+		Binary:         "yt-dlp",
+		CookiesMode:    CookiesNone,
+	}
 }
 
 func Settings() Config {
 	return cfg
+}
+
+func positiveInt(value string) (int, error) {
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 1 {
+		return 0, errors.New("must be a positive integer")
+	}
+	return n, nil
+}
+
+func parseSize(value string) (int64, error) {
+	mult := int64(1)
+	if value != "" {
+		switch value[len(value)-1] {
+		case 'k', 'K':
+			mult = 1 << 10
+		case 'm', 'M':
+			mult = 1 << 20
+		case 'g', 'G':
+			mult = 1 << 30
+		}
+		if mult > 1 {
+			value = value[:len(value)-1]
+		}
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || n < 1 || n > (1<<62)/mult {
+		return 0, errors.New("must be a positive size, e.g. 500M or 2G")
+	}
+	return n * mult, nil
 }
 
 func parseConfig(path string) (Config, error) {
@@ -108,11 +176,30 @@ func parseConfig(path string) (Config, error) {
 				c.Listen = value
 			}
 		case "downloads.max_parallel":
-			limit, err := strconv.Atoi(value)
-			if err != nil || limit < 1 {
-				return c, fmt.Errorf("%s:%d: downloads.max_parallel must be a positive integer", path, n)
+			c.MaxParallel, err = positiveInt(value)
+		case "downloads.max_filesize":
+			c.MaxFileSize, err = parseSize(value)
+		case "downloads.max_media_seconds":
+			c.MaxMediaSecs, err = positiveInt(value)
+		case "downloads.directory":
+			if value != "" {
+				c.DownloadsDir = value
 			}
-			c.MaxParallel = limit
+		case "downloads.format":
+			if value != "" {
+				c.FormatSelector = value
+			}
+		case "queue.ttl":
+			c.QueueTTL, err = time.ParseDuration(value)
+			if err == nil && c.QueueTTL <= 0 {
+				err = errors.New("must be positive")
+			}
+		case "queue.max_urls_per_request":
+			c.MaxURLsPerReq, err = positiveInt(value)
+		case "queue.max_size":
+			c.MaxQueueSize, err = positiveInt(value)
+		case "queue.max_url_length":
+			c.MaxURLLength, err = positiveInt(value)
 		case "instance.name":
 			if value != "" {
 				c.InstanceName = value
@@ -133,6 +220,9 @@ func parseConfig(path string) (Config, error) {
 			c.CookiesBrowser = value
 		default:
 			return c, fmt.Errorf("%s:%d: unknown option %q in section %q", path, n, key, section)
+		}
+		if err != nil {
+			return c, fmt.Errorf("%s:%d: %s.%s: %w", path, n, section, key, err)
 		}
 	}
 	if err := scanner.Err(); err != nil {

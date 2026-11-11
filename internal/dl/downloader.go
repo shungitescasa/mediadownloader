@@ -19,15 +19,11 @@ import (
 )
 
 const (
-	downloadsDir     = "downloads"
-	maxFileSize      = 2 << 30
-	maxMediaSeconds  = 600
 	probeTimeout     = 60 * time.Second
 	downloadTimeout  = 30 * time.Minute
 	maxProbeOutput   = 4 << 20
 	maxStderrCapture = 8 << 10
 	workerInterval   = 5 * time.Second
-	formatSelector   = "bv*+ba/b"
 	cookiesCopyName  = "cookies.txt"
 )
 
@@ -190,11 +186,11 @@ func downloadArgs(task QueueTask) []string {
 	if task.Type == TypeAudio {
 		return []string{"-f", "ba/b", "-x", "--audio-format", "mp3"}
 	}
-	return []string{"--merge-output-format", "mp4", "-f", formatSelector}
+	return []string{"--merge-output-format", "mp4", "-f", cfg.FormatSelector}
 }
 
 func DownloadTask(ctx context.Context, task QueueTask) (string, error) {
-	root, err := filepath.Abs(downloadsDir)
+	root, err := filepath.Abs(cfg.DownloadsDir)
 	if err != nil {
 		return "", err
 	}
@@ -227,9 +223,9 @@ func DownloadTask(ctx context.Context, task QueueTask) (string, error) {
 		defer cancel()
 
 		args := append(append([]string{}, base...),
-			"--max-filesize", fmt.Sprint(maxFileSize),
+			"--max-filesize", fmt.Sprint(cfg.MaxFileSize),
 			"--playlist-items", "1",
-			"--download-sections", fmt.Sprintf("*0-%d", maxMediaSeconds),
+			"--download-sections", fmt.Sprintf("*0-%d", cfg.MaxMediaSecs),
 			"--restrict-filenames",
 		)
 		args = append(args, downloadArgs(task)...)
@@ -258,7 +254,7 @@ func DownloadTask(ctx context.Context, task QueueTask) (string, error) {
 		if err != nil || !st.Mode().IsRegular() {
 			continue
 		}
-		if st.Size() > maxFileSize {
+		if st.Size() > cfg.MaxFileSize {
 			return "", errTooLarge
 		}
 		produced = m
@@ -344,7 +340,7 @@ func runTask(ctx context.Context, task QueueTask) {
 }
 
 func cleanupFiles(tasks []QueueTask) {
-	entries, err := os.ReadDir(downloadsDir)
+	entries, err := os.ReadDir(cfg.DownloadsDir)
 	if err != nil {
 		return
 	}
@@ -362,7 +358,7 @@ func cleanupFiles(tasks []QueueTask) {
 		if _, ok := live[id]; ok {
 			continue
 		}
-		if err := os.RemoveAll(filepath.Join(downloadsDir, e.Name())); err != nil {
+		if err := os.RemoveAll(filepath.Join(cfg.DownloadsDir, e.Name())); err != nil {
 			log.Println("cleanup failed:", err)
 		}
 	}

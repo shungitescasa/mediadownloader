@@ -13,13 +13,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-const (
-	queueTTL          = time.Hour
-	maxURLsPerRequest = 10
-	maxQueueSize      = 200
-	maxURLLength      = 2048
-)
-
 type Response struct {
 	StatusCode int    `json:"status_code"`
 	Message    string `json:"message"`
@@ -42,7 +35,7 @@ func collectURLs(values map[string][]string) ([]string, error) {
 				if line == "" {
 					continue
 				}
-				if len(line) > maxURLLength {
+				if len(line) > cfg.MaxURLLength {
 					return nil, errors.New("url is too long")
 				}
 				u, err := url.ParseRequestURI(line)
@@ -56,7 +49,7 @@ func collectURLs(values map[string][]string) ([]string, error) {
 	if len(urls) == 0 {
 		return nil, errors.New("no urls provided")
 	}
-	if len(urls) > maxURLsPerRequest {
+	if len(urls) > cfg.MaxURLsPerReq {
 		return nil, errors.New("too many urls in one request")
 	}
 	return urls, nil
@@ -126,7 +119,7 @@ func AddToQueue(ctx fiber.Ctx) error {
 			Type:      kind,
 			Status:    StatusPending,
 			CreatedAt: created,
-			ExpiresAt: created.Add(queueTTL),
+			ExpiresAt: created.Add(cfg.QueueTTL),
 		}
 		fresh = append(fresh, task)
 		result = append(result, task)
@@ -136,7 +129,7 @@ func AddToQueue(ctx fiber.Ctx) error {
 	if err := tx.QueryRow("SELECT COUNT(*) FROM tasks").Scan(&total); err != nil {
 		return reply(ctx, http.StatusInternalServerError, "failed to read queue")
 	}
-	if total-retries+len(fresh) > maxQueueSize {
+	if total-retries+len(fresh) > cfg.MaxQueueSize {
 		return reply(ctx, http.StatusTooManyRequests, "queue is full")
 	}
 

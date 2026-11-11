@@ -52,7 +52,7 @@ func Download(ctx fiber.Ctx) error {
 	}
 	name := task.ID + "." + task.Extension
 
-	root, err := filepath.Abs(downloadsDir)
+	root, err := filepath.Abs(cfg.DownloadsDir)
 	if err != nil {
 		return reply(ctx, http.StatusInternalServerError, "failed to open file")
 	}
