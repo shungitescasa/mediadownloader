@@ -31,6 +31,22 @@ func Index(ctx fiber.Ctx) error {
 	})
 }
 
+func Developers(ctx fiber.Ctx) error {
+	ctx.Set("Content-Type", fiber.MIMETextHTMLCharsetUTF8)
+	c := dl.Settings()
+	maintainer := c.MaintainerName
+	if maintainer == "" {
+		maintainer = c.MaintainerLink
+	}
+	return templates.ExecuteTemplate(ctx.Response().BodyWriter(), "developers.html", map[string]any{
+		"Title":          c.InstanceName,
+		"Maintainer":     maintainer,
+		"MaintainerLink": c.MaintainerLink,
+		"YtdlpVersion":   c.YtdlpVersion,
+		"Origin":         ctx.Protocol() + "://" + ctx.Host(),
+	})
+}
+
 func Static() fiber.Handler {
 	sub, err := fs.Sub(files, "static")
 	if err != nil {

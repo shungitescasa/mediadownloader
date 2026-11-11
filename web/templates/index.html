@@ -4,20 +4,19 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>{{.Title}}</title>
-        <meta name="description" content="download any type of media directly to your computer">
+        <meta
+            name="description"
+            content="download any type of media directly to your computer"
+        />
         <link rel="stylesheet" href="/static/style.css" />
-        <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon">
+        <link
+            rel="shortcut icon"
+            href="/static/favicon.ico"
+            type="image/x-icon"
+        />
     </head>
     <body>
-        <header>
-            <h1>
-                <img
-                    src="/static/img/brand/big.webp"
-                    alt="{{.Title}}"
-                    title="{{.Title}}"
-                />
-            </h1>
-        </header>
+        {{template "header" .}}
         <main>
             <form id="form">
                 <input
@@ -51,41 +50,7 @@
             <p id="error"></p>
             <section id="queue"></section>
         </main>
-        <footer>
-            {{if .Maintainer}}
-            <p>
-                maintained by {{if .MaintainerLink}}<a
-                    href="{{.MaintainerLink}}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    >{{.Maintainer}}</a
-                >{{else}}{{.Maintainer}}{{end}}
-            </p>
-            {{end}}
-            <p>
-                powered by
-                <a
-                    href="https://github.com/yt-dlp/yt-dlp"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    >yt-dlp</a
-                >
-                {{.YtdlpVersion}} &middot;
-                <a
-                    href="https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    >supported platforms</a
-                >
-                &middot;
-                <a
-                    href="https://github.com/shungitescasa/mediadownloader"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    >source code</a
-                >
-            </p>
-        </footer>
+        {{template "footer" .}}
     </body>
 
     <script src="/static/app.js"></script>

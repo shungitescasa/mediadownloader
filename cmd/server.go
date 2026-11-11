@@ -28,6 +28,7 @@ func main() {
 	app := fiber.New()
 
 	app.Get("/", web.Index)
+	app.Get("/developers", web.Developers)
 	app.Use("/static", web.Static())
 	app.Post("/queue", dl.AddToQueue)
 	app.Get("/download", dl.Download)
