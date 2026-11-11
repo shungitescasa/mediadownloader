@@ -20,7 +20,6 @@ import (
 
 const (
 	downloadsDir     = "downloads"
-	maxConcurrent    = 2
 	maxFileSize      = 2 << 30
 	maxMediaSeconds  = 600
 	probeTimeout     = 60 * time.Second
@@ -39,7 +38,7 @@ var (
 	errNoOutput = errors.New("download produced no file")
 )
 
-var slots = make(chan struct{}, maxConcurrent)
+var slots chan struct{}
 
 var (
 	runningMu sync.Mutex
@@ -450,6 +449,7 @@ func ProcessQueue(ctx context.Context) {
 }
 
 func StartWorker(ctx context.Context) {
+	slots = make(chan struct{}, cfg.MaxParallel)
 	resetInterrupted()
 
 	go func() {

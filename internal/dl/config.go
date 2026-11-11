@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -29,6 +30,10 @@ name = mediadownloader
 name =
 link =
 
+[downloads]
+; maximum number of downloads running at the same time
+max_parallel = 4
+
 [yt-dlp]
 binary = yt-dlp
 
@@ -47,6 +52,7 @@ var supportedBrowsers = map[string]struct{}{
 }
 
 type Config struct {
+	MaxParallel    int
 	Listen         string
 	InstanceName   string
 	MaintainerName string
@@ -61,7 +67,7 @@ type Config struct {
 var cfg = defaultSettings()
 
 func defaultSettings() Config {
-	return Config{Listen: ":3056", InstanceName: "mediadownloader", Binary: "yt-dlp", CookiesMode: CookiesNone}
+	return Config{MaxParallel: 4, Listen: ":3056", InstanceName: "mediadownloader", Binary: "yt-dlp", CookiesMode: CookiesNone}
 }
 
 func Settings() Config {
@@ -101,6 +107,12 @@ func parseConfig(path string) (Config, error) {
 			if value != "" {
 				c.Listen = value
 			}
+		case "downloads.max_parallel":
+			limit, err := strconv.Atoi(value)
+			if err != nil || limit < 1 {
+				return c, fmt.Errorf("%s:%d: downloads.max_parallel must be a positive integer", path, n)
+			}
+			c.MaxParallel = limit
 		case "instance.name":
 			if value != "" {
 				c.InstanceName = value
