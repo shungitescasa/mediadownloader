@@ -78,6 +78,7 @@ type Config struct {
 	MaxQueueSize   int
 	MaxURLLength   int
 	Listen         string
+	DatabasePath   string
 	InstanceName   string
 	MaintainerName string
 	MaintainerLink string
@@ -102,6 +103,7 @@ func defaultSettings() Config {
 		MaxQueueSize:   200,
 		MaxURLLength:   2048,
 		Listen:         ":3056",
+		DatabasePath:   "history.db",
 		InstanceName:   "mediadownloader",
 		Binary:         "yt-dlp",
 		CookiesMode:    CookiesNone,
@@ -174,6 +176,10 @@ func parseConfig(path string) (Config, error) {
 		case "server.listen":
 			if value != "" {
 				c.Listen = value
+			}
+		case "database.path":
+			if value != "" {
+				c.DatabasePath = value
 			}
 		case "downloads.max_parallel":
 			c.MaxParallel, err = positiveInt(value)

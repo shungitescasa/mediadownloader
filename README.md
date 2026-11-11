@@ -42,6 +42,10 @@ The configuration file is in INI format. If `mediadownloader.ini` does not exist
 ; address to listen on, host:port (empty host means all interfaces)
 listen = :3056
 
+[database]
+; path to the SQLite file with the download history
+path = history.db
+
 [instance]
 ; name shown in the page title
 name = mediadownloader
@@ -90,7 +94,7 @@ browser =
 ./mediadownloader
 ```
 
-The service listens on the address from `server.listen` (`:3056` by default). The download history is stored in `history.db` in the working directory.
+The service listens on the address from `server.listen` (`:3056` by default). The download history is stored in the SQLite file from `database.path` (`history.db` in the working directory by default).
 
 ## License
 
