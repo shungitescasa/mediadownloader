@@ -1,5 +1,7 @@
 # ![mediadownloader](/icon.webp)
 
+[![Build](https://github.com/shungitescasa/mediadownloader/actions/workflows/build.yml/badge.svg)](https://github.com/shungitescasa/mediadownloader/actions/workflows/build.yml)
+
 A small self-hosted web service for downloading media from links. It is written in Go and uses `yt-dlp` under the hood.
 
 ## Prerequisites

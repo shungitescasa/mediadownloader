@@ -1,0 +1,47 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build-linux:
+    name: Build (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build -trimpath -ldflags="-s -w" -o mediadownloader-linux-amd64 ./cmd
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mediadownloader-linux-amd64
+          path: mediadownloader-linux-amd64
+
+  build-alpine:
+    name: Build (alpine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get Go version
+        id: gover
+        run: echo "version=$(awk '/^go /{print $2}' go.mod)" >> "$GITHUB_OUTPUT"
+      - name: Build in Alpine container
+        run: |
+          docker run --rm -v "$PWD":/src -w /src \
+            -e CGO_ENABLED=0 -e GOTOOLCHAIN=auto \
+            golang:${{ steps.gover.outputs.version }}-alpine \
+            go build -trimpath -ldflags="-s -w" -o mediadownloader-alpine-amd64 ./cmd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mediadownloader-alpine-amd64
+          path: mediadownloader-alpine-amd64
