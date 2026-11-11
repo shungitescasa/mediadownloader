@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"tools/mediadownloader/internal/dl"
+	"tools/mediadownloader/internal/version"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/static"
@@ -38,6 +39,9 @@ func render(ctx fiber.Ctx, name, path, pageTitle, description string) error {
 		"Maintainer":     maintainer,
 		"MaintainerLink": c.MaintainerLink,
 		"YtdlpVersion":   c.YtdlpVersion,
+		"Version":        version.Version,
+		"BuildTime":      version.BuildTime,
+		"CommitURL":      version.CommitURL(),
 	})
 }
 

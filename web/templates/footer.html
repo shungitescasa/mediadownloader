@@ -38,5 +38,16 @@
             GNU AGPL v3 License with FORSEN modifier
         </a>
     </p>
+    <p>
+        build {{if .CommitURL}}
+        <a
+            href="{{.CommitURL}}"
+            target="_blank"
+            rel="nofollow noopener noreferrer"
+        >
+            {{.Version}}
+        </a>
+        {{else}} dev {{end}} {{if .BuildTime}}({{.BuildTime}}){{end}}
+    </p>
 </footer>
 {{end}}
