@@ -3,11 +3,9 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{{.Title}}</title>
-        <meta
-            name="description"
-            content="download any type of media directly to your computer"
-        />
+        <title>{{.PageTitle}}</title>
+        <meta name="description" content="{{.Description}}" />
+        {{template "meta" .}}
         <link rel="stylesheet" href="/static/style.css" />
         <link
             rel="shortcut icon"

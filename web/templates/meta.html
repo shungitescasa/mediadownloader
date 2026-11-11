@@ -1,0 +1,11 @@
+{{define "meta"}}
+<meta name="robots" content="nofollow" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="{{.Title}}" />
+<meta property="og:title" content="{{.PageTitle}}" />
+<meta property="og:description" content="{{.Description}}" />
+<meta property="og:url" content="{{.Origin}}{{.Path}}" />
+<meta property="og:image" content="{{.Origin}}/static/img/brand/big.webp" />
+<meta property="og:image:type" content="image/webp" />
+<meta property="og:image:alt" content="{{.Title}}" />
+{{end}}

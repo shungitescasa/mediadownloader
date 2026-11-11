@@ -3,11 +3,9 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>for developers - {{.Title}}</title>
-        <meta
-            name="description"
-            content="how to send API requests to {{.Title}}"
-        />
+        <title>{{.PageTitle}}</title>
+        <meta name="description" content="{{.Description}}" />
+        {{template "meta" .}}
         <link rel="stylesheet" href="/static/style.css" />
         <link
             rel="shortcut icon"
