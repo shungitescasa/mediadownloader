@@ -20,6 +20,9 @@ func main() {
 	defer stop()
 
 	dl.Init(*configPath)
+	if err := dl.OpenStore("history.db"); err != nil {
+		log.Fatalln("opening database:", err)
+	}
 	dl.StartWorker(ctx)
 
 	app := fiber.New()

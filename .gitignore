@@ -38,7 +38,6 @@ tempfiles/
 .zed/
 .DS_Store
 
-# runtime queue
-queue.json
-queue.json.tmp
+# runtime data
+history.db*
 downloads/

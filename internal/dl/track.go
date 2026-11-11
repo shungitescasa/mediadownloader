@@ -16,9 +16,9 @@ const (
 )
 
 type TrackEvent struct {
-	ID     string `json:"id"`
-	URL    string `json:"url"`
-	Status string `json:"status"`
+	ID     string     `json:"id"`
+	URL    string     `json:"url"`
+	Status TaskStatus `json:"status"`
 }
 
 func toTrackEvent(t QueueTask) TrackEvent {
@@ -36,7 +36,7 @@ func writeEvent(w *bufio.Writer, ev TrackEvent) error {
 	return w.Flush()
 }
 
-func isTerminal(status string) bool {
+func isTerminal(status TaskStatus) bool {
 	return status == StatusDone || status == StatusFailed
 }
 

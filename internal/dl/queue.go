@@ -3,11 +3,9 @@ package dl
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -16,30 +14,11 @@ import (
 )
 
 const (
-	queueFile         = "queue.json"
 	queueTTL          = time.Hour
 	maxURLsPerRequest = 10
 	maxQueueSize      = 200
 	maxURLLength      = 2048
-	StatusPending     = "pending"
-	StatusDownloading = "downloading"
-	StatusDone        = "done"
-	StatusFailed      = "failed"
-	TypeVideo         = "video"
-	TypeAudio         = "audio"
-	TypeMeta          = "meta"
 )
-
-type QueueTask struct {
-	ID        string    `json:"id"`
-	URL       string    `json:"url"`
-	Type      string    `json:"type"`
-	Status    string    `json:"status"`
-	File      string    `json:"file,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-}
 
 type Response struct {
 	StatusCode int    `json:"status_code"`
@@ -49,53 +28,9 @@ type Response struct {
 
 var queueMu sync.Mutex
 
-func validType(t string) bool {
-	return t == TypeVideo || t == TypeAudio || t == TypeMeta
-}
-
-func hashTask(kind, rawURL string) string {
-	sum := sha256.Sum256([]byte(kind + "\n" + rawURL))
+func hashTask(kind TaskType, rawURL string) string {
+	sum := sha256.Sum256([]byte(kind.String() + "\n" + rawURL))
 	return hex.EncodeToString(sum[:])
-}
-
-func loadQueue() ([]QueueTask, error) {
-	raw, err := os.ReadFile(queueFile)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if len(strings.TrimSpace(string(raw))) == 0 {
-		return nil, nil
-	}
-
-	var tasks []QueueTask
-	if err := json.Unmarshal(raw, &tasks); err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-	alive := tasks[:0]
-	for _, t := range tasks {
-		if t.ExpiresAt.After(now) {
-			alive = append(alive, t)
-		}
-	}
-	return alive, nil
-}
-
-func saveQueue(tasks []QueueTask) error {
-	raw, err := json.MarshalIndent(tasks, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	tmp := queueFile + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, queueFile)
 }
 
 func collectURLs(values map[string][]string) ([]string, error) {
@@ -130,52 +65,41 @@ func collectURLs(values map[string][]string) ([]string, error) {
 func AddToQueue(ctx fiber.Ctx) error {
 	form, err := ctx.MultipartForm()
 	if err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(Response{
-			StatusCode: http.StatusBadRequest,
-			Message:    "expected a multipart form",
-		})
+		return reply(ctx, http.StatusBadRequest, "expected a multipart form")
 	}
 
 	urls, err := collectURLs(form.Value)
 	if err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(Response{
-			StatusCode: http.StatusBadRequest,
-			Message:    err.Error(),
-		})
+		return reply(ctx, http.StatusBadRequest, err.Error())
 	}
 
 	kind := TypeVideo
 	if v := form.Value["type"]; len(v) > 0 && v[0] != "" {
-		kind = v[0]
-	}
-	if !validType(kind) {
-		return ctx.Status(http.StatusBadRequest).JSON(Response{
-			StatusCode: http.StatusBadRequest,
-			Message:    "invalid type",
-		})
+		parsed, ok := parseType(v[0])
+		if !ok {
+			return reply(ctx, http.StatusBadRequest, "invalid type")
+		}
+		kind = parsed
 	}
 
 	queueMu.Lock()
 	defer queueMu.Unlock()
 
-	tasks, err := loadQueue()
+	tx, err := db.Begin()
 	if err != nil {
-		return ctx.Status(http.StatusInternalServerError).JSON(Response{
-			StatusCode: http.StatusInternalServerError,
-			Message:    "failed to read queue",
-		})
+		return reply(ctx, http.StatusInternalServerError, "failed to read queue")
+	}
+	defer tx.Rollback()
+
+	if err := purgeExpired(tx); err != nil {
+		return reply(ctx, http.StatusInternalServerError, "failed to read queue")
 	}
 
-	existing := make(map[string]int, len(tasks))
-	for i, t := range tasks {
-		existing[t.ID] = i
-	}
-
-	now := time.Now()
+	created := time.Unix(time.Now().Unix(), 0)
 	result := make([]QueueTask, 0, len(urls))
 	seen := make(map[string]struct{}, len(urls))
 	var fresh []QueueTask
-	var retry []string
+	retries := 0
 
 	for _, u := range urls {
 		id := hashTask(kind, u)
@@ -184,12 +108,16 @@ func AddToQueue(ctx fiber.Ctx) error {
 		}
 		seen[id] = struct{}{}
 
-		if i, ok := existing[id]; ok {
-			if tasks[i].Status != StatusFailed {
-				result = append(result, tasks[i])
+		existing, ok, err := getTask(tx, id)
+		if err != nil {
+			return reply(ctx, http.StatusInternalServerError, "failed to read queue")
+		}
+		if ok {
+			if existing.Status != StatusFailed {
+				result = append(result, existing)
 				continue
 			}
-			retry = append(retry, id)
+			retries++
 		}
 
 		task := QueueTask{
@@ -197,38 +125,34 @@ func AddToQueue(ctx fiber.Ctx) error {
 			URL:       u,
 			Type:      kind,
 			Status:    StatusPending,
-			CreatedAt: now,
-			ExpiresAt: now.Add(queueTTL),
+			CreatedAt: created,
+			ExpiresAt: created.Add(queueTTL),
 		}
 		fresh = append(fresh, task)
 		result = append(result, task)
 	}
 
-	if len(tasks)-len(retry)+len(fresh) > maxQueueSize {
-		return ctx.Status(http.StatusTooManyRequests).JSON(Response{
-			StatusCode: http.StatusTooManyRequests,
-			Message:    "queue is full",
-		})
+	var total int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM tasks").Scan(&total); err != nil {
+		return reply(ctx, http.StatusInternalServerError, "failed to read queue")
+	}
+	if total-retries+len(fresh) > maxQueueSize {
+		return reply(ctx, http.StatusTooManyRequests, "queue is full")
 	}
 
-	if len(fresh) > 0 {
-		drop := make(map[string]struct{}, len(retry))
-		for _, id := range retry {
-			drop[id] = struct{}{}
+	for _, t := range fresh {
+		if _, err := tx.Exec("DELETE FROM tasks WHERE id = ?", t.ID); err != nil {
+			return reply(ctx, http.StatusInternalServerError, "failed to save queue")
 		}
-		kept := tasks[:0]
-		for _, t := range tasks {
-			if _, ok := drop[t.ID]; !ok {
-				kept = append(kept, t)
-			}
+		if _, err := tx.Exec(
+			"INSERT INTO tasks (id, url, type, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+			t.ID, t.URL, t.Type, t.Status, t.CreatedAt.Unix(), t.ExpiresAt.Unix(),
+		); err != nil {
+			return reply(ctx, http.StatusInternalServerError, "failed to save queue")
 		}
-
-		if err := saveQueue(append(kept, fresh...)); err != nil {
-			return ctx.Status(http.StatusInternalServerError).JSON(Response{
-				StatusCode: http.StatusInternalServerError,
-				Message:    "failed to save queue",
-			})
-		}
+	}
+	if err := tx.Commit(); err != nil {
+		return reply(ctx, http.StatusInternalServerError, "failed to save queue")
 	}
 
 	return ctx.Status(http.StatusAccepted).JSON(Response{

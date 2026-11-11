@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -268,11 +269,14 @@ func DownloadTask(ctx context.Context, task QueueTask) (string, error) {
 		return "", errNoOutput
 	}
 
-	name := task.ID + strings.ToLower(filepath.Ext(produced))
-	if err := os.Rename(produced, filepath.Join(root, name)); err != nil {
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(produced)), ".")
+	if !isSafeExt(ext) {
+		return "", errNoOutput
+	}
+	if err := os.Rename(produced, filepath.Join(root, task.ID+"."+ext)); err != nil {
 		return "", err
 	}
-	return name, nil
+	return ext, nil
 }
 
 func safeError(err error) string {
@@ -287,22 +291,34 @@ func safeError(err error) string {
 	return "download failed"
 }
 
-func updateTask(id string, fn func(*QueueTask)) {
+func isSafeExt(ext string) bool {
+	if ext == "" || len(ext) > 16 {
+		return false
+	}
+	for _, r := range ext {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func mimeFor(ext string) string {
+	if m := mime.TypeByExtension("." + ext); m != "" {
+		return m
+	}
+	return "application/octet-stream"
+}
+
+func updateTask(id string, status TaskStatus, description, ext, mimeType string) {
 	queueMu.Lock()
 	defer queueMu.Unlock()
 
-	tasks, err := loadQueue()
+	_, err := db.Exec(
+		"UPDATE tasks SET status = ?, description = ?, extension = ?, mime_type = ? WHERE id = ?",
+		status, description, ext, mimeType, id,
+	)
 	if err != nil {
-		log.Println("queue read failed:", err)
-		return
-	}
-	for i := range tasks {
-		if tasks[i].ID == id {
-			fn(&tasks[i])
-			break
-		}
-	}
-	if err := saveQueue(tasks); err != nil {
 		log.Println("queue save failed:", err)
 	}
 }
@@ -315,24 +331,17 @@ func runTask(ctx context.Context, task QueueTask) {
 		runningMu.Unlock()
 	}()
 
-	name, err := DownloadTask(ctx, task)
+	ext, err := DownloadTask(ctx, task)
 	if err != nil {
 		log.Printf("task %s failed: %v", task.ID, err)
 		if ctx.Err() != nil {
 			return
 		}
-		updateTask(task.ID, func(t *QueueTask) {
-			t.Status = StatusFailed
-			t.Error = safeError(err)
-		})
+		updateTask(task.ID, StatusFailed, safeError(err), "", "")
 		return
 	}
 
-	updateTask(task.ID, func(t *QueueTask) {
-		t.Status = StatusDone
-		t.File = name
-		t.Error = ""
-	})
+	updateTask(task.ID, StatusDone, "", ext, mimeFor(ext))
 }
 
 func cleanupFiles(tasks []QueueTask) {
@@ -364,7 +373,18 @@ func claimPending(parent context.Context) []claimedTask {
 	queueMu.Lock()
 	defer queueMu.Unlock()
 
-	tasks, err := loadQueue()
+	tx, err := db.Begin()
+	if err != nil {
+		log.Println("queue read failed:", err)
+		return nil
+	}
+	defer tx.Rollback()
+
+	if err := purgeExpired(tx); err != nil {
+		log.Println("queue purge failed:", err)
+		return nil
+	}
+	tasks, err := listTasks(tx)
 	if err != nil {
 		log.Println("queue read failed:", err)
 		return nil
@@ -373,34 +393,42 @@ func claimPending(parent context.Context) []claimedTask {
 	cleanupFiles(tasks)
 
 	var claimed []claimedTask
-	for i := range tasks {
-		if tasks[i].Status != StatusPending {
+	release := func() {
+		for _, c := range claimed {
+			<-slots
+			cancelRunning(c.task.ID)
+			runningMu.Lock()
+			delete(running, c.task.ID)
+			runningMu.Unlock()
+		}
+	}
+
+	for _, t := range tasks {
+		if t.Status != StatusPending {
 			continue
 		}
 		select {
 		case slots <- struct{}{}:
-			tasks[i].Status = StatusDownloading
+			if _, err := tx.Exec("UPDATE tasks SET status = ? WHERE id = ?", StatusDownloading, t.ID); err != nil {
+				<-slots
+				log.Println("queue save failed:", err)
+				release()
+				return nil
+			}
+			t.Status = StatusDownloading
 			ctx, cancel := context.WithCancel(parent)
 			runningMu.Lock()
-			running[tasks[i].ID] = cancel
+			running[t.ID] = cancel
 			runningMu.Unlock()
-			claimed = append(claimed, claimedTask{task: tasks[i], ctx: ctx})
+			claimed = append(claimed, claimedTask{task: t, ctx: ctx})
 		default:
 		}
 	}
 
-	if len(claimed) > 0 {
-		if err := saveQueue(tasks); err != nil {
-			log.Println("queue save failed:", err)
-			for _, c := range claimed {
-				<-slots
-				cancelRunning(c.task.ID)
-				runningMu.Lock()
-				delete(running, c.task.ID)
-				runningMu.Unlock()
-			}
-			return nil
-		}
+	if err := tx.Commit(); err != nil {
+		log.Println("queue save failed:", err)
+		release()
+		return nil
 	}
 	return claimed
 }
@@ -409,19 +437,9 @@ func resetInterrupted() {
 	queueMu.Lock()
 	defer queueMu.Unlock()
 
-	tasks, err := loadQueue()
+	_, err := db.Exec("UPDATE tasks SET status = ? WHERE status = ?", StatusPending, StatusDownloading)
 	if err != nil {
-		return
-	}
-	changed := false
-	for i := range tasks {
-		if tasks[i].Status == StatusDownloading {
-			tasks[i].Status = StatusPending
-			changed = true
-		}
-	}
-	if changed {
-		_ = saveQueue(tasks)
+		log.Println("queue reset failed:", err)
 	}
 }
 
